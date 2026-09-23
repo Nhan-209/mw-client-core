@@ -6,17 +6,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use windows_sys::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
-use windows_sys::Win32::Storage::FileSystem::CreateFileW;
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 
 type CreateFileWFn = unsafe extern "system" fn(
-    lpFileName: *const u16,
-    dwDesiredAccess: u32,
-    dwShareMode: u32,
-    lpSecurityAttributes: *const SECURITY_ATTRIBUTES,
-    dwCreationDisposition: u32,
-    dwFlagsAndAttributes: u32,
-    hTemplateFile: HANDLE,
+    lp_file_name: *const u16,
+    dw_desired_access: u32,
+    dw_share_mode: u32,
+    lp_security_attributes: *const SECURITY_ATTRIBUTES,
+    dw_creation_disposition: u32,
+    dw_flags_and_attributes: u32,
+    h_template_file: HANDLE,
 ) -> HANDLE;
 
 static VFS_STATE: Mutex<Option<VfsState>> = Mutex::new(None);
@@ -47,7 +46,7 @@ impl VfsHookManager {
 
         type FarProc = Option<unsafe extern "system" fn() -> isize>;
         let target_fn = unsafe { std::mem::transmute::<FarProc, CreateFileWFn>(p_proc) };
-        let detour = unsafe { GenericDetour::new(target_fn, hooked_CreateFileW)? };
+        let detour = unsafe { GenericDetour::new(target_fn, hooked_create_file_w)? };
 
         unsafe {
             detour.enable()?;
@@ -99,25 +98,25 @@ impl VfsHookManager {
     }
 }
 
-unsafe extern "system" fn hooked_CreateFileW(
-    lpFileName: *const u16,
-    dwDesiredAccess: u32,
-    dwShareMode: u32,
-    lpSecurityAttributes: *const SECURITY_ATTRIBUTES,
-    dwCreationDisposition: u32,
-    dwFlagsAndAttributes: u32,
-    hTemplateFile: HANDLE,
+unsafe extern "system" fn hooked_create_file_w(
+    lp_file_name: *const u16,
+    dw_desired_access: u32,
+    dw_share_mode: u32,
+    lp_security_attributes: *const SECURITY_ATTRIBUTES,
+    dw_creation_disposition: u32,
+    dw_flags_and_attributes: u32,
+    h_template_file: HANDLE,
 ) -> HANDLE {
-    if lpFileName.is_null() {
+    if lp_file_name.is_null() {
         return INVALID_HANDLE_VALUE;
     }
 
     // Đọc chuỗi wide string
     let mut len = 0;
-    while *lpFileName.add(len) != 0 {
+    while *lp_file_name.add(len) != 0 {
         len += 1;
     }
-    let slice = std::slice::from_raw_parts(lpFileName, len);
+    let slice = std::slice::from_raw_parts(lp_file_name, len);
     let path_str = String::from_utf16_lossy(slice);
 
     // Kiểm tra có nằm trong danh sách chuyển hướng không
@@ -146,19 +145,19 @@ unsafe extern "system" fn hooked_CreateFileW(
             .collect();
         target_wide.as_ptr()
     } else {
-        lpFileName
+        lp_file_name
     };
 
     if let Ok(guard) = VFS_STATE.lock() {
         if let Some(state_ref) = guard.as_ref() {
             return state_ref.detour.call(
                 final_ptr,
-                dwDesiredAccess,
-                dwShareMode,
-                lpSecurityAttributes,
-                dwCreationDisposition,
-                dwFlagsAndAttributes,
-                hTemplateFile,
+                dw_desired_access,
+                dw_share_mode,
+                lp_security_attributes,
+                dw_creation_disposition,
+                dw_flags_and_attributes,
+                h_template_file,
             );
         }
     }

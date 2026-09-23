@@ -39,7 +39,7 @@ impl LuaHookManager {
 
         type FarProc = Option<unsafe extern "system" fn() -> isize>;
         let target_fn = unsafe { std::mem::transmute::<FarProc, LuaLoadBufferFn>(p_proc) };
-        let detour = unsafe { GenericDetour::new(target_fn, hooked_luaL_loadbuffer)? };
+        let detour = unsafe { GenericDetour::new(target_fn, hooked_lua_loadbuffer)? };
 
         unsafe {
             detour.enable()?;
@@ -68,7 +68,7 @@ impl LuaHookManager {
 }
 
 /// Hàm Detour chặn luaL_loadbuffer
-unsafe extern "C" fn hooked_luaL_loadbuffer(
+unsafe extern "C" fn hooked_lua_loadbuffer(
     state: *mut c_void,
     buff: *const u8,
     size: usize,
