@@ -16,6 +16,10 @@ use windows_sys::Win32::System::Threading::{
 };
 
 const TARGET_PROCESS_NAMES: &[&str] = &[
+    "minigameapppc.exe",
+    "MiniGameApp.exe",
+    "iworldpc.exe",
+    "MicroMiniNew.exe",
     "MiniWorld.exe",
     "MiniWorld_OverSeas.exe",
     "MiniWorldGame.exe",
