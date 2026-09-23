@@ -45,7 +45,8 @@ impl VfsHookManager {
             return Err(anyhow!("Cannot resolve CreateFileW in kernel32.dll"));
         }
 
-        let target_fn: CreateFileWFn = unsafe { std::mem::transmute(p_proc) };
+        type FarProc = Option<unsafe extern "system" fn() -> isize>;
+        let target_fn = unsafe { std::mem::transmute::<FarProc, CreateFileWFn>(p_proc) };
         let detour = unsafe { GenericDetour::new(target_fn, hooked_CreateFileW)? };
 
         unsafe {

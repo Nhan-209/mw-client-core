@@ -51,6 +51,12 @@ pub struct UIManager {
     config: ClientConfig,
 }
 
+impl Default for UIManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UIManager {
     pub fn new() -> Self {
         let config = Self::load_config().unwrap_or_default();

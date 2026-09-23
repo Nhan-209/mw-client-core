@@ -37,7 +37,8 @@ impl LuaHookManager {
             return Err(anyhow!("Cannot resolve luaL_loadbuffer in liblua.dll"));
         }
 
-        let target_fn: LuaLoadBufferFn = unsafe { std::mem::transmute(p_proc) };
+        type FarProc = Option<unsafe extern "system" fn() -> isize>;
+        let target_fn = unsafe { std::mem::transmute::<FarProc, LuaLoadBufferFn>(p_proc) };
         let detour = unsafe { GenericDetour::new(target_fn, hooked_luaL_loadbuffer)? };
 
         unsafe {
@@ -85,6 +86,13 @@ unsafe extern "C" fn hooked_luaL_loadbuffer(
         || script_name.contains("minilobby")
     {
         info!("[LuaHook] Intercepted lobby script load: {}", script_name);
+        if let Ok(mut guard) = HOOK_STATE.lock() {
+            if let Some(state_ref) = guard.as_mut() {
+                for pending in state_ref.pending_scripts.drain(..) {
+                    info!("[LuaHook] Queued script ready ({} bytes)", pending.len());
+                }
+            }
+        }
     }
 
     if let Ok(guard) = HOOK_STATE.lock() {

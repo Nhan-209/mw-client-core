@@ -155,7 +155,9 @@ fn inject_dll(pid: u32, dll_path: &Path) -> Result<()> {
             return Err(anyhow!("Failed to find LoadLibraryW address"));
         }
 
-        let thread_fn = std::mem::transmute(p_loadlib);
+        type FarProc = Option<unsafe extern "system" fn() -> isize>;
+        type ThreadStartRoutine = Option<unsafe extern "system" fn(*mut c_void) -> u32>;
+        let thread_fn = std::mem::transmute::<FarProc, ThreadStartRoutine>(p_loadlib);
         let h_thread = CreateRemoteThread(
             h_proc,
             std::ptr::null(),

@@ -51,6 +51,9 @@ fn runtime_entrypoint() {
 }
 
 /// DllMain: Điểm vào chuẩn Windows khi injector tiêm DLL vào game
+///
+/// # Safety
+/// Called by the Windows OS loader during DLL attach/detach lifecycle.
 #[no_mangle]
 #[allow(non_snake_case)]
 pub unsafe extern "system" fn DllMain(
