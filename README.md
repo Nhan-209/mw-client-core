@@ -1,4 +1,4 @@
-# mw-client-core
+# mw-customUI-core
 
 Runtime hook and SDK for Mini World UI customization and client modding.
 
