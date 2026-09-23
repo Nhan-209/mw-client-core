@@ -5,8 +5,12 @@ use std::ffi::{c_char, c_void, CStr};
 use std::sync::Mutex;
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 
-type LuaLoadBufferFn =
-    unsafe extern "C" fn(state: *mut c_void, buff: *const u8, size: usize, name: *const c_char) -> i32;
+type LuaLoadBufferFn = unsafe extern "C" fn(
+    state: *mut c_void,
+    buff: *const u8,
+    size: usize,
+    name: *const c_char,
+) -> i32;
 
 static HOOK_STATE: Mutex<Option<LuaHookState>> = Mutex::new(None);
 

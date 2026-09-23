@@ -11,7 +11,10 @@ fn test_lobby_descriptor_lookup() {
     let desc = LobbyType::MainLobbyV4.descriptor();
     assert!(desc.is_some());
     let desc = desc.unwrap();
-    assert_eq!(desc.virtual_texture_path, "ui/mobile/texture0/bigtex/bg_hall_mi.jpg");
+    assert_eq!(
+        desc.virtual_texture_path,
+        "ui/mobile/texture0/bigtex/bg_hall_mi.jpg"
+    );
     assert_eq!(desc.view_class, "MainV4LobbyView");
 }
 

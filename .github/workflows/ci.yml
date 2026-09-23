@@ -11,8 +11,11 @@ env:
 
 jobs:
   build-and-test:
-    name: Build & Verify (Windows)
+    name: Build & Verify (${{ matrix.target }})
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     strategy:
       matrix:
         target:
@@ -42,7 +45,8 @@ jobs:
             ${{ runner.os }}-${{ matrix.target }}-cargo-
 
       - name: Code Formatting Check
-        run: cargo fmt --all -- --check || exit 0
+        run: cargo fmt --all -- --check
+        continue-on-error: true
 
       - name: Run Clippy Linter
         run: cargo clippy --target ${{ matrix.target }} --all-targets -- -D warnings

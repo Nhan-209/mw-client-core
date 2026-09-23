@@ -18,7 +18,10 @@ fn runtime_entrypoint() {
 
     info!("================================================");
     info!("   Mini World Custom Client Runtime (Rust)     ");
-    info!("   Version: {}                                ", env!("CARGO_PKG_VERSION"));
+    info!(
+        "   Version: {}                                ",
+        env!("CARGO_PKG_VERSION")
+    );
     info!("================================================");
 
     let ui_mgr = UIManager::new();
