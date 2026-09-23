@@ -1,7 +1,10 @@
 use anyhow::{anyhow, Result};
 use log::info;
-use retour::GenericDetour;
+use minhook_sys::{
+    MH_CreateHook, MH_EnableHook, MH_Initialize, MH_ERROR_ALREADY_INITIALIZED, MH_OK,
+};
 use std::collections::HashMap;
+use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use windows_sys::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE};
@@ -21,7 +24,7 @@ type CreateFileWFn = unsafe extern "system" fn(
 static VFS_STATE: Mutex<Option<VfsState>> = Mutex::new(None);
 
 struct VfsState {
-    detour: GenericDetour<CreateFileWFn>,
+    trampoline: CreateFileWFn,
     /// Ánh xạ: tên tệp gốc (chữ thường) -> đường dẫn tệp thay thế trên đĩa
     redirections: HashMap<String, PathBuf>,
 }
@@ -45,18 +48,32 @@ impl VfsHookManager {
         }
 
         type FarProc = Option<unsafe extern "system" fn() -> isize>;
-        let target_fn = unsafe { std::mem::transmute::<FarProc, CreateFileWFn>(p_proc) };
-        let detour = unsafe { GenericDetour::new(target_fn, hooked_create_file_w)? };
+        let target_ptr = unsafe { std::mem::transmute::<FarProc, *mut c_void>(p_proc) };
+        let detour_ptr = hooked_create_file_w as *const () as *mut c_void;
+        let mut orig_ptr: *mut c_void = std::ptr::null_mut();
 
         unsafe {
-            detour.enable()?;
+            let init_status = MH_Initialize();
+            if init_status != MH_OK && init_status != MH_ERROR_ALREADY_INITIALIZED {
+                return Err(anyhow!("MH_Initialize failed: {}", init_status));
+            }
+            let create_status = MH_CreateHook(target_ptr, detour_ptr, &mut orig_ptr);
+            if create_status != MH_OK {
+                return Err(anyhow!("MH_CreateHook failed: {}", create_status));
+            }
+            let enable_status = MH_EnableHook(target_ptr);
+            if enable_status != MH_OK {
+                return Err(anyhow!("MH_EnableHook failed: {}", enable_status));
+            }
         }
+
+        let trampoline = unsafe { std::mem::transmute::<*mut c_void, CreateFileWFn>(orig_ptr) };
 
         let mut lock = VFS_STATE
             .lock()
             .map_err(|_| anyhow!("Failed to acquire VFS lock"))?;
         *lock = Some(VfsState {
-            detour,
+            trampoline,
             redirections: HashMap::new(),
         });
 
@@ -66,36 +83,48 @@ impl VfsHookManager {
 
     /// Đăng ký chuyển hướng một tệp tài nguyên sang tệp custom
     pub fn register_redirection(original_file_name: &str, custom_path: PathBuf) {
-        if let Ok(mut lock) = VFS_STATE.lock() {
-            if let Some(state) = lock.as_mut() {
-                let key = original_file_name.to_lowercase();
-                info!(
-                    "[VFSHook] Registered redirect: {} -> {:?}",
-                    key, custom_path
-                );
-                state.redirections.insert(key, custom_path);
-            }
-        }
+        let Ok(mut lock) = VFS_STATE.lock() else {
+            return;
+        };
+        let Some(state) = lock.as_mut() else {
+            return;
+        };
+        let key = original_file_name.to_lowercase();
+        info!(
+            "[VFSHook] Registered redirect: {} -> {:?}",
+            key, custom_path
+        );
+        state.redirections.insert(key, custom_path);
     }
 
     /// Tự động quét thư mục custom_assets/textures/ để ánh xạ ảnh nền sảnh
     pub fn scan_custom_folder(dir: &Path) {
-        if !dir.exists() {
+        let Ok(entries) = std::fs::read_dir(dir) else {
             return;
-        }
-
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() {
-                    if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                        let name_str = file_name.to_string();
-                        Self::register_redirection(&name_str, path);
-                    }
-                }
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                let name_str = file_name.to_string();
+                Self::register_redirection(&name_str, path);
             }
         }
     }
+}
+
+fn resolve_redirect_path(path_str: &str) -> Option<PathBuf> {
+    let guard = VFS_STATE.lock().ok()?;
+    let state = guard.as_ref()?;
+    let lower = path_str.to_lowercase();
+    for (orig_name, target) in &state.redirections {
+        if lower.ends_with(orig_name) {
+            return Some(target.clone());
+        }
+    }
+    None
 }
 
 unsafe extern "system" fn hooked_create_file_w(
@@ -111,7 +140,6 @@ unsafe extern "system" fn hooked_create_file_w(
         return INVALID_HANDLE_VALUE;
     }
 
-    // Đọc chuỗi wide string
     let mut len = 0;
     while *lp_file_name.add(len) != 0 {
         len += 1;
@@ -119,21 +147,7 @@ unsafe extern "system" fn hooked_create_file_w(
     let slice = std::slice::from_raw_parts(lp_file_name, len);
     let path_str = String::from_utf16_lossy(slice);
 
-    // Kiểm tra có nằm trong danh sách chuyển hướng không
-    let redirect_path = {
-        let lock = VFS_STATE.lock().ok();
-        lock.and_then(|guard| {
-            guard.as_ref().and_then(|state| {
-                let lower = path_str.to_lowercase();
-                for (orig_name, target) in &state.redirections {
-                    if lower.ends_with(orig_name) {
-                        return Some(target.clone());
-                    }
-                }
-                None
-            })
-        })
-    };
+    let redirect_path = resolve_redirect_path(&path_str);
 
     let target_wide: Vec<u16>;
     let final_ptr = if let Some(target) = redirect_path {
@@ -150,7 +164,7 @@ unsafe extern "system" fn hooked_create_file_w(
 
     if let Ok(guard) = VFS_STATE.lock() {
         if let Some(state_ref) = guard.as_ref() {
-            return state_ref.detour.call(
+            return (state_ref.trampoline)(
                 final_ptr,
                 dw_desired_access,
                 dw_share_mode,

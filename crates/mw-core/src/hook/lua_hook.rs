@@ -1,6 +1,8 @@
 use anyhow::{anyhow, Result};
 use log::{error, info};
-use retour::GenericDetour;
+use minhook_sys::{
+    MH_CreateHook, MH_EnableHook, MH_Initialize, MH_ERROR_ALREADY_INITIALIZED, MH_OK,
+};
 use std::ffi::{c_char, c_void, CStr};
 use std::sync::Mutex;
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
@@ -15,7 +17,7 @@ type LuaLoadBufferFn = unsafe extern "C" fn(
 static HOOK_STATE: Mutex<Option<LuaHookState>> = Mutex::new(None);
 
 struct LuaHookState {
-    detour: GenericDetour<LuaLoadBufferFn>,
+    trampoline: LuaLoadBufferFn,
     pending_scripts: Vec<String>,
 }
 
@@ -38,18 +40,32 @@ impl LuaHookManager {
         }
 
         type FarProc = Option<unsafe extern "system" fn() -> isize>;
-        let target_fn = unsafe { std::mem::transmute::<FarProc, LuaLoadBufferFn>(p_proc) };
-        let detour = unsafe { GenericDetour::new(target_fn, hooked_lua_loadbuffer)? };
+        let target_ptr = unsafe { std::mem::transmute::<FarProc, *mut c_void>(p_proc) };
+        let detour_ptr = hooked_lua_loadbuffer as *const () as *mut c_void;
+        let mut orig_ptr: *mut c_void = std::ptr::null_mut();
 
         unsafe {
-            detour.enable()?;
+            let init_status = MH_Initialize();
+            if init_status != MH_OK && init_status != MH_ERROR_ALREADY_INITIALIZED {
+                return Err(anyhow!("MH_Initialize failed: {}", init_status));
+            }
+            let create_status = MH_CreateHook(target_ptr, detour_ptr, &mut orig_ptr);
+            if create_status != MH_OK {
+                return Err(anyhow!("MH_CreateHook failed: {}", create_status));
+            }
+            let enable_status = MH_EnableHook(target_ptr);
+            if enable_status != MH_OK {
+                return Err(anyhow!("MH_EnableHook failed: {}", enable_status));
+            }
         }
+
+        let trampoline = unsafe { std::mem::transmute::<*mut c_void, LuaLoadBufferFn>(orig_ptr) };
 
         let mut lock = HOOK_STATE
             .lock()
             .map_err(|_| anyhow!("Failed to acquire hook state lock"))?;
         *lock = Some(LuaHookState {
-            detour,
+            trampoline,
             pending_scripts: Vec::new(),
         });
 
@@ -59,11 +75,24 @@ impl LuaHookManager {
 
     /// Thêm script Lua để chuẩn bị thực thi tự động khi máy ảo Lua nạp file
     pub fn queue_script(script: String) {
-        if let Ok(mut lock) = HOOK_STATE.lock() {
-            if let Some(state) = lock.as_mut() {
-                state.pending_scripts.push(script);
-            }
+        let Ok(mut lock) = HOOK_STATE.lock() else {
+            return;
+        };
+        if let Some(state) = lock.as_mut() {
+            state.pending_scripts.push(script);
         }
+    }
+}
+
+fn drain_queued_scripts() {
+    let Ok(mut guard) = HOOK_STATE.lock() else {
+        return;
+    };
+    let Some(state_ref) = guard.as_mut() else {
+        return;
+    };
+    for pending in state_ref.pending_scripts.drain(..) {
+        info!("[LuaHook] Queued script ready ({} bytes)", pending.len());
     }
 }
 
@@ -80,24 +109,17 @@ unsafe extern "C" fn hooked_lua_loadbuffer(
         "anonymous".into()
     };
 
-    // Kiểm tra và thực thi script can thiệp UI khi các file điều hướng sảnh được nạp
     if script_name.contains("MainV4LobbyView")
         || script_name.contains("MainLobbyMgr")
         || script_name.contains("minilobby")
     {
         info!("[LuaHook] Intercepted lobby script load: {}", script_name);
-        if let Ok(mut guard) = HOOK_STATE.lock() {
-            if let Some(state_ref) = guard.as_mut() {
-                for pending in state_ref.pending_scripts.drain(..) {
-                    info!("[LuaHook] Queued script ready ({} bytes)", pending.len());
-                }
-            }
-        }
+        drain_queued_scripts();
     }
 
     if let Ok(guard) = HOOK_STATE.lock() {
         if let Some(state_ref) = guard.as_ref() {
-            return state_ref.detour.call(state, buff, size, name);
+            return (state_ref.trampoline)(state, buff, size, name);
         }
     }
 

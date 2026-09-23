@@ -18,4 +18,4 @@ anyhow = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
 windows-sys = { workspace = true }
-retour = { workspace = true }
+minhook-sys = { workspace = true }
