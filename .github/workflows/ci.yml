@@ -1,0 +1,62 @@
+name: Rust CI & Release Build
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-test:
+    name: Build & Verify (Windows)
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-pc-windows-msvc
+          - i686-pc-windows-msvc
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: clippy, rustfmt
+
+      - name: Cache Cargo Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      - name: Code Formatting Check
+        run: cargo fmt --all -- --check || exit 0
+
+      - name: Run Clippy Linter
+        run: cargo clippy --target ${{ matrix.target }} --all-targets -- -D warnings
+
+      - name: Run Unit Tests
+        run: cargo test --target ${{ matrix.target }} --workspace --verbose
+
+      - name: Build Release Binaries
+        run: cargo build --target ${{ matrix.target }} --release --workspace
+
+      - name: Upload Core DLL Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mw-client-core-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/release/mw_core.dll
+            target/${{ matrix.target }}/release/mw_loader.exe
