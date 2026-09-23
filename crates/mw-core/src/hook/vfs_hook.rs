@@ -36,7 +36,7 @@ impl VfsHookManager {
         let proc_name = b"CreateFileW\0";
 
         let h_module = unsafe { GetModuleHandleA(kernel32.as_ptr()) };
-        if h_module.is_null() {
+        if h_module == 0 {
             return Err(anyhow!("Cannot get kernel32.dll handle"));
         }
 

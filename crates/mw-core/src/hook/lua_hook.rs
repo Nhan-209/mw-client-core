@@ -28,7 +28,7 @@ impl LuaHookManager {
         let proc_name = b"luaL_loadbuffer\0";
 
         let h_module = unsafe { GetModuleHandleA(module_name.as_ptr()) };
-        if h_module.is_null() {
+        if h_module == 0 {
             return Err(anyhow!("liblua.dll is not loaded in current process yet"));
         }
 

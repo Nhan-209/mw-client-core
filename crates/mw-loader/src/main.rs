@@ -3,13 +3,13 @@ use std::env;
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 use windows_sys::Win32::Foundation::{CloseHandle, FALSE, HANDLE, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 use windows_sys::Win32::System::Memory::{
-    VirtualAllocEx, VirtualFreeEx, WriteProcessMemory, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE,
-    PAGE_READWRITE,
+    VirtualAllocEx, VirtualFreeEx, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE,
 };
 use windows_sys::Win32::System::Threading::{
     CreateRemoteThread, OpenProcess, WaitForSingleObject, INFINITE, PROCESS_ALL_ACCESS,
@@ -115,7 +115,7 @@ fn inject_dll(pid: u32, dll_path: &Path) -> Result<()> {
 
     unsafe {
         let h_proc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
-        if h_proc.is_null() {
+        if h_proc == 0 || h_proc == INVALID_HANDLE_VALUE {
             return Err(anyhow!("Failed to OpenProcess for PID: {}", pid));
         }
 
@@ -166,7 +166,7 @@ fn inject_dll(pid: u32, dll_path: &Path) -> Result<()> {
             std::ptr::null_mut(),
         );
 
-        if h_thread.is_null() {
+        if h_thread == 0 || h_thread == INVALID_HANDLE_VALUE {
             VirtualFreeEx(h_proc, remote_buf, 0, MEM_RELEASE);
             CloseHandle(h_proc);
             return Err(anyhow!("CreateRemoteThread failed"));
