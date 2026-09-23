@@ -1,15 +1,17 @@
 use anyhow::Result;
 use log::info;
-use mw_sdk::types::{CustomNavButton, LobbyType};
+use mw_sdk::types::{CustomNavButton, LobbyBgOverride, LobbyType};
 use mw_sdk::LuaScriptGenerator;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClientConfig {
     pub enable_vfs_redirection: bool,
     pub enable_lua_hooks: bool,
     pub custom_textures_folder: String,
+    pub custom_scripts_folder: String,
+    pub background_overrides: Vec<LobbyBgOverride>,
     pub custom_buttons: Vec<CustomNavButton>,
 }
 
@@ -19,6 +21,11 @@ impl Default for ClientConfig {
             enable_vfs_redirection: true,
             enable_lua_hooks: true,
             custom_textures_folder: "custom_assets/textures".into(),
+            custom_scripts_folder: "custom_assets/scripts".into(),
+            background_overrides: vec![LobbyBgOverride {
+                lobby: LobbyType::MainLobbyV4,
+                image_path: "custom_assets/textures/bg_hall_mi.jpg".into(),
+            }],
             custom_buttons: vec![
                 CustomNavButton {
                     id: "btn_goto_teamup".into(),
@@ -82,7 +89,53 @@ impl UIManager {
         &self.config.custom_buttons
     }
 
+    pub fn load_custom_scripts(&self) -> Vec<(String, String)> {
+        let mut scripts = Vec::new();
+        let dir = Path::new(&self.config.custom_scripts_folder);
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return scripts;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() || path.extension().and_then(|s| s.to_str()) != Some("lua") {
+                continue;
+            }
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "custom.lua".into());
+                info!("[UIManager] Loaded custom lua script: {}", name);
+                scripts.push((name, content));
+            }
+        }
+        scripts
+    }
+
     pub fn build_injection_script(&self) -> String {
-        LuaScriptGenerator::generate_custom_buttons_injector(&self.config.custom_buttons)
+        let mut script = String::new();
+
+        if !self.config.background_overrides.is_empty() {
+            script.push_str(&LuaScriptGenerator::generate_bg_overrides_injector(
+                &self.config.background_overrides,
+            ));
+            script.push('\n');
+        }
+
+        if !self.config.custom_buttons.is_empty() {
+            script.push_str(&LuaScriptGenerator::generate_custom_buttons_injector(
+                &self.config.custom_buttons,
+            ));
+            script.push('\n');
+        }
+
+        for (name, content) in self.load_custom_scripts() {
+            script.push_str(&format!(
+                "\n-- [MW-Client-Core Custom Script: {}]\n{}\n",
+                name, content
+            ));
+        }
+
+        script
     }
 }

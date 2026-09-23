@@ -26,6 +26,19 @@ fn runtime_entrypoint() {
 
     let ui_mgr = UIManager::new();
 
+    // Tự động tạo thư mục custom nếu chưa có
+    let _ = std::fs::create_dir_all("custom_assets/textures");
+    let _ = std::fs::create_dir_all("custom_assets/scripts");
+    let sample_script = PathBuf::from("custom_assets/scripts/example_custom_ui.lua");
+    if !sample_script.exists() {
+        let template = r#"-- [MW-Client-Core] Example Custom UI Script
+-- Bạn có thể viết bất kỳ mã Lua / FairyGUI nào ở đây.
+-- Script này sẽ tự động được nạp khi sảnh mở.
+print("[CustomScript] Hello from custom_assets/scripts/example_custom_ui.lua!")
+"#;
+        let _ = std::fs::write(&sample_script, template);
+    }
+
     // 1. Kích hoạt Virtual File System Redirection
     if let Err(e) = VfsHookManager::install() {
         error!("[Runtime] Failed to install VFS hook: {:?}", e);

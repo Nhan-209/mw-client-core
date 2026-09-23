@@ -1,9 +1,21 @@
-use crate::types::{CustomNavButton, LobbyType};
+use crate::types::{CustomNavButton, LobbyBgOverride, LobbyType};
 
 /// Trình sinh mã kịch bản Lua 5.1 an toàn để inject vào Mini World
 pub struct LuaScriptGenerator;
 
 impl LuaScriptGenerator {
+    /// Sinh mã Lua để ghi đè hàng loạt ảnh nền sảnh từ cấu hình
+    pub fn generate_bg_overrides_injector(overrides: &[LobbyBgOverride]) -> String {
+        let mut script = String::from("-- [MW-Client-Core] Batch Background Overrides\n");
+        for item in overrides {
+            script.push_str(&Self::generate_background_override(
+                item.lobby,
+                &item.image_path,
+            ));
+        }
+        script
+    }
+
     /// Sinh mã Lua để thay đổi ảnh nền của một sảnh cụ thể tại runtime
     pub fn generate_background_override(lobby: LobbyType, custom_abs_path: &str) -> String {
         let normalized_path = custom_abs_path.replace('\\', "/");

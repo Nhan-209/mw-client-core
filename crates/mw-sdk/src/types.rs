@@ -89,6 +89,13 @@ pub const KNOWN_LOBBIES: &[LobbyDescriptor] = &[
     },
 ];
 
+/// Cấu hình thay đổi ảnh nền của một sảnh cụ thể bằng đường dẫn ảnh ngoài
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LobbyBgOverride {
+    pub lobby: LobbyType,
+    pub image_path: String,
+}
+
 /// Định nghĩa nút bấm UI tùy biến để chèn vào giao diện sảnh
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomNavButton {

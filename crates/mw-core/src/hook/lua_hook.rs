@@ -84,16 +84,36 @@ impl LuaHookManager {
     }
 }
 
-fn drain_queued_scripts() {
-    let Ok(mut guard) = HOOK_STATE.lock() else {
-        return;
-    };
-    let Some(state_ref) = guard.as_mut() else {
-        return;
-    };
-    for pending in state_ref.pending_scripts.drain(..) {
-        info!("[LuaHook] Queued script ready ({} bytes)", pending.len());
+fn build_injected_buffer(buff: *const u8, size: usize) -> Option<Vec<u8>> {
+    if buff.is_null() || size == 0 {
+        return None;
     }
+    // Chỉ can thiệp vào script dạng plain-text Lua (không can thiệp bytecode bắt đầu bằng 0x1B)
+    unsafe {
+        if *buff == 0x1b {
+            return None;
+        }
+    }
+
+    let Ok(mut guard) = HOOK_STATE.lock() else {
+        return None;
+    };
+    let state_ref = guard.as_mut()?;
+    if state_ref.pending_scripts.is_empty() {
+        return None;
+    }
+
+    let orig_slice = unsafe { std::slice::from_raw_parts(buff, size) };
+    let mut combined = Vec::with_capacity(size + 2048);
+    combined.extend_from_slice(orig_slice);
+    combined.extend_from_slice(b"\n\n-- [MW-Client-Core Injected Payload]\n");
+
+    for script in state_ref.pending_scripts.drain(..) {
+        combined.extend_from_slice(script.as_bytes());
+        combined.extend_from_slice(b"\n");
+    }
+
+    Some(combined)
 }
 
 /// Hàm Detour chặn luaL_loadbuffer
@@ -109,12 +129,25 @@ unsafe extern "C" fn hooked_lua_loadbuffer(
         "anonymous".into()
     };
 
-    if script_name.contains("MainV4LobbyView")
+    let is_lobby = script_name.contains("MainV4LobbyView")
         || script_name.contains("MainLobbyMgr")
         || script_name.contains("minilobby")
-    {
+        || script_name.contains("TeamupMain");
+
+    if is_lobby {
         info!("[LuaHook] Intercepted lobby script load: {}", script_name);
-        drain_queued_scripts();
+        if let Some(injected) = build_injected_buffer(buff, size) {
+            info!(
+                "[LuaHook] Injected {} bytes custom UI payload into {}",
+                injected.len() - size,
+                script_name
+            );
+            if let Ok(guard) = HOOK_STATE.lock() {
+                if let Some(state_ref) = guard.as_ref() {
+                    return (state_ref.trampoline)(state, injected.as_ptr(), injected.len(), name);
+                }
+            }
+        }
     }
 
     if let Ok(guard) = HOOK_STATE.lock() {

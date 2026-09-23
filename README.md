@@ -22,15 +22,22 @@ Drop replacement images into `custom_assets/textures/`:
 | `bg_garden_lottery.png` | Homeland Hall |
 | `img_board_online.png` | Multiplayer Lobby button/banner |
 
-## Custom UI Buttons (`mw_config.json`)
+## Configuration (`mw_config.json`)
 
-Configure buttons injected into the active scene:
+Configure background overrides, custom navigation buttons, and folders:
 
 ```json
 {
   "enable_vfs_redirection": true,
   "enable_lua_hooks": true,
   "custom_textures_folder": "custom_assets/textures",
+  "custom_scripts_folder": "custom_assets/scripts",
+  "background_overrides": [
+    {
+      "lobby": "MainLobbyV4",
+      "image_path": "custom_assets/textures/bg_hall_mi.jpg"
+    }
+  ],
   "custom_buttons": [
     {
       "id": "btn_goto_teamup",
@@ -53,6 +60,10 @@ Configure buttons injected into the active scene:
   ]
 }
 ```
+
+## Custom Scripts (`custom_assets/scripts/`)
+
+Drop any `.lua` file into `custom_assets/scripts/` to run arbitrary FairyGUI / Mini World Lua code upon lobby initialization. All files are loaded and executed sequentially.
 
 ## Plugin Development
 

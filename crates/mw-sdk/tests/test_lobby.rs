@@ -46,3 +46,24 @@ fn test_lua_button_generation() {
     assert!(script.contains("Test Button"));
     assert!(script.contains("TeamupMain"));
 }
+
+#[test]
+fn test_lua_bg_overrides_batch_generation() {
+    use mw_sdk::types::LobbyBgOverride;
+
+    let overrides = vec![
+        LobbyBgOverride {
+            lobby: LobbyType::MainLobbyV4,
+            image_path: "D:/assets/bg1.png".into(),
+        },
+        LobbyBgOverride {
+            lobby: LobbyType::TeamUpWaitingRoom,
+            image_path: "D:/assets/bg2.png".into(),
+        },
+    ];
+    let script = LuaScriptGenerator::generate_bg_overrides_injector(&overrides);
+    assert!(script.contains("D:/assets/bg1.png"));
+    assert!(script.contains("D:/assets/bg2.png"));
+    assert!(script.contains("TeamupMainAutoGen"));
+}
+
