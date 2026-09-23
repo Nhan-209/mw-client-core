@@ -87,16 +87,12 @@ unsafe extern "C" fn hooked_luaL_loadbuffer(
         info!("[LuaHook] Intercepted lobby script load: {}", script_name);
     }
 
-    // Lấy con trỏ gốc để tiếp tục thực thi
-    let original = {
-        let lock = HOOK_STATE.lock().ok();
-        lock.and_then(|guard| guard.as_ref().map(|s| s.detour.trampoline()))
-    };
-
-    if let Some(trampoline) = original {
-        trampoline(state, buff, size, name)
-    } else {
-        error!("[LuaHook] Trampoline not found!");
-        -1
+    if let Ok(guard) = HOOK_STATE.lock() {
+        if let Some(state_ref) = guard.as_ref() {
+            return state_ref.detour.call(state, buff, size, name);
+        }
     }
+
+    error!("[LuaHook] Detour not available!");
+    -1
 }

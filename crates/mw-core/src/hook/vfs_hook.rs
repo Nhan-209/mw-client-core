@@ -89,7 +89,8 @@ impl VfsHookManager {
                 let path = entry.path();
                 if path.is_file() {
                     if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                        Self::register_redirection(file_name, path);
+                        let name_str = file_name.to_string();
+                        Self::register_redirection(&name_str, path);
                     }
                 }
             }
@@ -147,22 +148,19 @@ unsafe extern "system" fn hooked_CreateFileW(
         lpFileName
     };
 
-    let original = {
-        let lock = VFS_STATE.lock().ok();
-        lock.and_then(|guard| guard.as_ref().map(|s| s.detour.trampoline()))
-    };
-
-    if let Some(trampoline) = original {
-        trampoline(
-            final_ptr,
-            dwDesiredAccess,
-            dwShareMode,
-            lpSecurityAttributes,
-            dwCreationDisposition,
-            dwFlagsAndAttributes,
-            hTemplateFile,
-        )
-    } else {
-        INVALID_HANDLE_VALUE
+    if let Ok(guard) = VFS_STATE.lock() {
+        if let Some(state_ref) = guard.as_ref() {
+            return state_ref.detour.call(
+                final_ptr,
+                dwDesiredAccess,
+                dwShareMode,
+                lpSecurityAttributes,
+                dwCreationDisposition,
+                dwFlagsAndAttributes,
+                hTemplateFile,
+            );
+        }
     }
+
+    INVALID_HANDLE_VALUE
 }
